@@ -1,7 +1,6 @@
-# 🌱 ForgetMeNot — Intelligent Plant Monitor
+# 🌱 ForgetMeNot: SmartPlant Monitor
 
-A Raspberry Pi–based (or fully simulated) plant monitoring system that uses an LLM to generate
-personalized watering thresholds and a continuous controller loop to simulate real-time soil sensing.
+Smart Plant Monitor that keeps you and your household zen!
 
 ---
 
@@ -13,7 +12,7 @@ personalized watering thresholds and a continuous controller loop to simulate re
 [ Mock Sensor ]  →  [ Controller Service (REST) ]  →  [ LED Output (terminal) ]
 ```
 
-Two processes communicate via **REST API** (the midterm's "device connectivity" requirement):
+Two processes communicate via **REST API** :
 
 | Process | File | Role |
 |---|---|---|
@@ -50,19 +49,13 @@ Open http://127.0.0.1:5000 in your browser.
 ```bash
 python controller.py
 ```
-
-Or run a quick demo that cycles through all LED statuses:
-```bash
-python controller.py --demo
-```
-
 ---
 
 ## How It Works
 
 ### Phase 1 — Personalization (Setup)
 1. User submits plant profile via web form
-2. Flask calls the Anthropic API with plant type + notes
+2. Flask calls the Duke Gateway OpenAi API with plant type + notes
 3. LLM returns JSON thresholds: `overwatered_max`, `healthy_min`, `healthy_max`, `almost_time_min`, `needs_water_min`, `check_interval_minutes`, `care_notes`
 4. Thresholds are stored in SQLite
 
@@ -95,33 +88,3 @@ python controller.py --demo
 | POST | `/api/log` | Controller posts sensor reading |
 | GET | `/api/status` | UI polls for latest status + history |
 | GET | `/api/history/:id` | Full reading history for a plant |
-
----
-
-## Midterm Requirements Checklist
-
--  **Device Connectivity** — Two processes (`app.py` + `controller.py`) communicate via REST API over HTTP
--  **LLM Data Enrichment** — Anthropic API generates plant-specific watering thresholds
--  **Visual Presentation** — Real-time dashboard with LED orb, moisture bar, history chart
--  **Design Diagrams** — See `531_I-5_Systems_Diagram.png` (submitted separately)
-
----
-
-## Real Hardware (Optional)
-To run on an actual Raspberry Pi with a real sensor:
-
-1. Replace `MockSensor.read()` in `controller.py` with real MCP3008 SPI reads using `spidev`
-2. Replace `set_led()` with actual GPIO calls using `RPi.GPIO` or `rpi_ws281x`
-3. No changes needed to `app.py` or the database
-
-```python
-# Real sensor example (replace MockSensor.read):
-import spidev
-spi = spidev.SpiDev()
-spi.open(0, 0)
-spi.max_speed_hz = 1350000
-
-def read_adc(channel=0):
-    adc = spi.xfer2([1, (8 + channel) << 4, 0])
-    return ((adc[1] & 3) << 8) + adc[2]
-```
