@@ -100,10 +100,10 @@ python controller.py --demo
 
 ## Midterm Requirements Checklist
 
-- ✅ **Device Connectivity** — Two processes (`app.py` + `controller.py`) communicate via REST API over HTTP
-- ✅ **LLM Data Enrichment** — Anthropic API generates plant-specific watering thresholds
-- ✅ **Visual Presentation** — Real-time dashboard with LED orb, moisture bar, history chart
-- ✅ **Design Diagrams** — See `531_I-5_Systems_Diagram.png` (submitted separately)
+-  **Device Connectivity** — Two processes (`app.py` + `controller.py`) communicate via REST API over HTTP
+-  **LLM Data Enrichment** — Anthropic API generates plant-specific watering thresholds
+-  **Visual Presentation** — Real-time dashboard with LED orb, moisture bar, history chart
+-  **Design Diagrams** — See `531_I-5_Systems_Diagram.png` (submitted separately)
 
 ---
 
