@@ -2,73 +2,69 @@
 ForgetMeNot - Pi Controller Service (Hardware Edition)
 =======================================================
 SIGNAL FLOW:
-  Capacitive Soil Sensor (analog voltage out)
+  Capacitive Soil Sensor (analog voltage)
     → ADS1115 ADC (converts analog to 16-bit digital over I2C)
       → Raspberry Pi (reads digital value, classifies, drives LEDs)
-        → Flask Server (logs reading, updates web UI)
+        → Flask Server on Mac (logs reading, updates web UI)
 
-The key hardware change from the original code:
-  BEFORE: MCP3008 SPI ADC → 0 to 1023 range (10-bit)
-  NOW:    ADS1115 I2C ADC → roughly 6000 to 28000 range (16-bit signed)
+Run this on the Pi in a terminal:
+  python controller.py
 
-We normalize the ADS1115 values back to 0–1023 so the rest of the
-app (thresholds, database, UI charts) doesn't need to change at all.
+For a quick LED + server test before using the real sensor:
+  python controller.py --demo
+
+BEFORE RUNNING:
+  1. Run calibrate.py and update WET_RAW and DRY_RAW below
+  2. Find your Mac's IP with: ipconfig getifaddr en0
+     then update SERVER_URL below
 """
 
 import time
-import board          # Adafruit Blinka - maps Pi GPIO pins to CircuitPython names
-import busio          # Adafruit Blinka - handles I2C/SPI bus communication
-import neopixel       # Adafruit CircuitPython NeoPixel driver
-import adafruit_ads1x15.ads1115 as ADS          # ADS1115 chip driver
-from adafruit_ads1x15.analog_in import AnalogIn  # Helper to read a single ADC channel
+import board
+import busio
+import neopixel
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
 
 from dotenv import load_dotenv
-load_dotenv()  # Loads LITELLM_TOKEN from your .env file
+load_dotenv()
 
-import requests   # For making HTTP calls to the Flask server
-import argparse   # For --demo flag on the command line
+import requests
+import argparse
 from datetime import datetime
 
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION — update these before running
 # =============================================================================
 
-# Where your Flask app.py server is running.
-# If app.py is on the SAME Pi as this script, use 127.0.0.1.
-# If app.py is on your LAPTOP, replace with your laptop's local IP, e.g.:
-#   SERVER_URL = "http://192.168.1.42:5000"
-SERVER_URL = "http://127.0.0.1:5000"
+# Your Mac's local IP address. Find it by running: ipconfig getifaddr en0
+# Both Mac and Pi must be on the same WiFi network.
+SERVER_URL = "http://YOUR_MAC_IP:5000"  # e.g. "http://192.168.1.42:5000"
 
-DEFAULT_POLL_INTERVAL = 10  # seconds between sensor readings (fallback value)
+DEFAULT_POLL_INTERVAL = 10  # seconds between readings (fallback)
 
 
 # =============================================================================
 # NEOPIXEL CONFIGURATION
 # =============================================================================
 
-NEOPIXEL_PIN = board.D18  # GPIO 18 — the standard PWM pin for NeoPixels on Pi
+NEOPIXEL_PIN = board.D18  # GPIO 18 — standard PWM pin for NeoPixels on Pi
 NUM_PIXELS   = 60         # Your strip has 60 LEDs
-BRIGHTNESS   = 0.3        # 0.0 to 1.0. At 0.3 the 60 LEDs draw ~150mA — safe for Pi's 5V pin.
-                          # Increase to 1.0 only if using an external 5V power supply.
+BRIGHTNESS   = 0.3        # 0.0 to 1.0. At 0.3, 60 LEDs draw ~150mA — safe for Pi's 5V pin.
+                          # Only increase to 1.0 if using an external 5V power supply.
 
 
 # =============================================================================
-# SENSOR CALIBRATION
+# SENSOR CALIBRATION — update after running calibrate.py
 # =============================================================================
-# The ADS1115 returns signed 16-bit integers (up to ±32767).
+# The ADS1115 returns signed 16-bit integers.
 # Capacitive sensors output LOWER voltage when WET, HIGHER when DRY.
-# So: lower raw value = wetter soil, higher raw value = drier soil.
+# Lower raw value = wetter, higher raw value = drier.
 #
-# YOU MUST CALIBRATE THESE FOR YOUR SPECIFIC SENSOR:
-#   1. Run:  python calibrate.py
-#   2. Hold sensor in open AIR for 10s → that reading is DRY_RAW
-#   3. Dip sensor in a cup of WATER for 10s → that reading is WET_RAW
-#   4. Paste those numbers below.
-#
-# These defaults are typical starting values — your sensor will differ slightly.
+# Run calibrate.py first, then replace these with your actual readings:
 
-WET_RAW = 10000   # Raw ADS1115 value when sensor is submerged in water (fully wet)
+WET_RAW = 10000   # Raw ADS1115 value when sensor is in water (fully wet)
 DRY_RAW = 27000   # Raw ADS1115 value when sensor is in open air (completely dry)
 
 
@@ -78,37 +74,28 @@ DRY_RAW = 27000   # Raw ADS1115 value when sensor is in open air (completely dry
 
 def init_hardware():
     """
-    Set up the I2C bus, ADS1115 ADC, and NeoPixel strip.
+    Initialize I2C bus, ADS1115 ADC, and NeoPixel strip.
 
-    I2C wiring (ADS1115 → Raspberry Pi):
-      ADS1115 VDD  → Pi 3.3V  (Pin 1)
-      ADS1115 GND  → Pi GND   (Pin 6)
-      ADS1115 SDA  → Pi GPIO2 (Pin 3)
-      ADS1115 SCL  → Pi GPIO3 (Pin 5)
+    WIRING — ADS1115 to Raspberry Pi:
+      ADS1115 VDD  →  Pi 3.3V   (Pin 1)
+      ADS1115 GND  →  Pi GND    (Pin 6)
+      ADS1115 SDA  →  Pi GPIO2  (Pin 3)
+      ADS1115 SCL  →  Pi GPIO3  (Pin 5)
 
-    Moisture sensor wiring (Sensor → ADS1115):
-      Sensor VCC   → ADS1115 VDD
-      Sensor GND   → ADS1115 GND
-      Sensor AOUT  → ADS1115 A0   ← the analog signal wire
+    WIRING — Moisture Sensor to ADS1115:
+      Sensor VCC   →  ADS1115 VDD
+      Sensor GND   →  ADS1115 GND
+      Sensor AOUT  →  ADS1115 A0   ← the analog signal wire
 
-    NeoPixel wiring (Strip → Pi):
-      Strip 5V     → Pi 5V    (Pin 2)
-      Strip GND    → Pi GND   (Pin 9)
-      Strip DIN    → Pi GPIO18 (Pin 12)
+    WIRING — NeoPixel Strip to Pi:
+      Strip 5V     →  Pi 5V     (Pin 2)
+      Strip GND    →  Pi GND    (Pin 9)
+      Strip DIN    →  Pi GPIO18 (Pin 12)
     """
-    # Initialize the I2C bus using the Pi's hardware I2C pins (GPIO2=SDA, GPIO3=SCL)
     i2c = busio.I2C(board.SCL, board.SDA)
-
-    # Create the ADS1115 object — this talks to the chip at its default I2C address (0x48)
     ads = ADS.ADS1115(i2c)
-
-    # Set up channel A0 — this is where your moisture sensor's analog output is connected
-    # AnalogIn gives us both .value (raw integer) and .voltage (converted to volts)
     chan = AnalogIn(ads, ADS.P0)
 
-    # Initialize the NeoPixel strip
-    # auto_write=False means we control exactly when the strip updates (more efficient)
-    # pixel_order=GRB because most NeoPixel strips use Green-Red-Blue byte order, not RGB
     pixels = neopixel.NeoPixel(
         NEOPIXEL_PIN,
         NUM_PIXELS,
@@ -117,52 +104,44 @@ def init_hardware():
         pixel_order=neopixel.GRB
     )
 
-    # Start with all LEDs off
     pixels.fill((0, 0, 0))
-    pixels.show()  # .show() pushes the color data out to the strip (needed when auto_write=False)
+    pixels.show()
 
     return chan, pixels
 
 
 # =============================================================================
-# ANALOG-TO-DIGITAL CONVERSION + NORMALIZATION
+# ANALOG TO DIGITAL CONVERSION + NORMALIZATION
 # =============================================================================
 
 def read_sensor_normalized(chan) -> tuple[int, int]:
     """
-    This is where the A/D conversion result gets processed.
+    Reads the ADS1115 and normalizes the result to 0-1023.
 
-    WHAT'S HAPPENING PHYSICALLY:
-      1. The capacitive sensor detects soil moisture as a change in capacitance.
-      2. That capacitance change shifts the sensor's output VOLTAGE (analog signal).
-      3. The ADS1115 samples that voltage and converts it to a 16-bit INTEGER (digital).
-         - This is the actual Analog-to-Digital Conversion (ADC) step.
-         - chan.value reads the digital result over I2C from the ADS1115.
-      4. We then NORMALIZE that 16-bit value down to 0–1023.
-         - Why? The LLM-generated thresholds and the web UI were designed for 0–1023.
-         - This way, app.py, the database, and the graphs need zero changes.
+    WHAT'S HAPPENING:
+      1. The capacitive sensor detects moisture as a change in capacitance
+      2. That capacitance shifts the sensor's output VOLTAGE (analog signal)
+      3. The ADS1115 converts that voltage to a 16-bit INTEGER (digital) —
+         this is the actual Analog-to-Digital Conversion step
+      4. chan.value reads that integer from the ADS1115 over I2C
+      5. We normalize from the ADS1115's range down to 0-1023 so the rest
+         of the app (thresholds, database, UI charts) needs zero changes
 
     NORMALIZATION MATH:
       normalized = (raw - WET_RAW) / (DRY_RAW - WET_RAW) * 1023
 
       Example with WET_RAW=10000, DRY_RAW=27000:
-        raw=10000 (soaking wet) → normalized = 0
-        raw=18500 (middle)      → normalized ≈ 511
-        raw=27000 (bone dry)    → normalized = 1023
-
-      Values are clamped to 0–1023 in case the sensor reads outside calibration range.
+        raw = 10000 (soaking wet) → normalized =    0
+        raw = 18500 (middle)      → normalized ~  511
+        raw = 27000 (bone dry)    → normalized = 1023
 
     Returns:
-      (normalized, raw_ads_value)
-      - normalized: 0–1023 integer sent to the server and used for classification
-      - raw_ads_value: the original ADS1115 reading, printed for debugging
+      normalized  — 0 to 1023 integer, used for classification and logging
+      raw         — original ADS1115 reading, printed for debugging
     """
-    raw = chan.value  # Read the 16-bit digital value from ADS1115 over I2C
+    raw = chan.value  # Triggers ADS1115 to sample analog voltage → returns digital int
 
-    # Normalize from the ADS1115's range to 0–1023
     normalized = (raw - WET_RAW) / (DRY_RAW - WET_RAW) * 1023
-
-    # Clamp: if the sensor reads wetter than WET_RAW or drier than DRY_RAW, keep it in bounds
     normalized = int(max(0, min(1023, normalized)))
 
     return normalized, raw
@@ -172,14 +151,12 @@ def read_sensor_normalized(chan) -> tuple[int, int]:
 # LED CONTROL
 # =============================================================================
 
-# Color tuples are (Red, Green, Blue) — but the strip uses GRB byte order,
-# which the neopixel library handles automatically when pixel_order=GRB is set.
 STATUS_COLORS = {
-    "watered":     (0,   200,  0),    # Green  — soil moisture is healthy
-    "almost_time": (255, 165,  0),    # Amber  — getting dry, water soon
-    "needs_water": (200,   0,  0),    # Red    — dry, water now
-    "overwatered": (0,    0,  200),   # Blue   — too wet, risk of root rot
-    "unknown":     (128,  0,  128),   # Purple — error or no active plant
+    "watered":     (0,   200,   0),   # Green  — healthy moisture
+    "almost_time": (255, 165,   0),   # Amber  — water soon
+    "needs_water": (200,   0,   0),   # Red    — water now
+    "overwatered": (0,     0, 200),   # Blue   — too wet, root rot risk
+    "unknown":     (128,   0, 128),   # Purple — error or no active plant
 }
 
 STATUS_LABELS = {
@@ -191,11 +168,7 @@ STATUS_LABELS = {
 }
 
 def set_led(pixels, status: str):
-    """
-    Set all 60 NeoPixels to the color corresponding to the plant's moisture status.
-    pixels.fill() sets every pixel to the same color.
-    pixels.show() sends the data signal down the strip to actually light them up.
-    """
+    """Set all 60 NeoPixels to the color for the given moisture status."""
     color = STATUS_COLORS.get(status, STATUS_COLORS["unknown"])
     pixels.fill(color)
     pixels.show()
@@ -203,7 +176,7 @@ def set_led(pixels, status: str):
 
 
 def clear_leds(pixels):
-    """Turn off all LEDs. Called on shutdown so the strip doesn't stay lit."""
+    """Turn off all LEDs. Called on shutdown."""
     pixels.fill((0, 0, 0))
     pixels.show()
 
@@ -214,21 +187,13 @@ def clear_leds(pixels):
 
 def classify_moisture(normalized: int, thresholds: dict) -> str:
     """
-    Map a normalized ADC reading (0–1023) to a human-readable status string.
+    Maps a normalized 0-1023 reading to a status string using the
+    LLM-generated thresholds stored in the Flask server's database.
 
-    The thresholds were generated by the LLM in app.py when you created the plant.
-    They follow this scale (lower = wetter):
-
-    0 ──[overwatered_max]──[healthy_min]──[healthy_max]──[almost_time_min]── 1023
-       ^                                                                    ^
-      WET                                                                  DRY
-
-    Example thresholds for a tropical houseplant:
-      overwatered_max = 150   (below this = dangerously wet)
-      healthy_min     = 200   (lower bound of ideal range)
-      healthy_max     = 500   (upper bound of ideal range)
-      almost_time_min = 650   (getting dry, water soon)
-      needs_water_min = 800   (dry, water immediately)
+    Scale (lower = wetter, higher = drier):
+    0 --[overwatered_max]--[healthy_max]--[almost_time_min]-- 1023
+       ^                                                     ^
+      WET                                                   DRY
     """
     ow_max = thresholds["overwatered_max"]
     h_max  = thresholds["healthy_max"]
@@ -237,7 +202,7 @@ def classify_moisture(normalized: int, thresholds: dict) -> str:
     if normalized < ow_max:
         return "overwatered"
     elif normalized <= h_max:
-        return "watered"       # Covers both healthy_min→healthy_max range
+        return "watered"
     elif normalized <= at_min:
         return "almost_time"
     else:
@@ -250,61 +215,57 @@ def classify_moisture(normalized: int, thresholds: dict) -> str:
 
 def run_controller(demo_mode: bool = False):
     """
-    Main entry point. Two modes:
+    Main entry point.
 
-    DEMO MODE (--demo flag):
-      Sends 4 fake readings to the server (one per status) to test LED colors
-      and server connectivity. Doesn't use the real sensor. Good for setup testing.
+    DEMO MODE (python controller.py --demo):
+      Sends 4 fake readings to test LED colors and server connectivity.
+      Does not use the real sensor. Good for verifying wiring before planting.
 
-    NORMAL MODE:
-      Continuous loop that:
-        1. Fetches the active plant + LLM thresholds from Flask
-        2. Reads real sensor value via ADS1115
-        3. Normalizes the 16-bit ADC value to 0–1023
-        4. Classifies the moisture level
-        5. Sets the NeoPixel color
-        6. POSTs the reading to Flask for storage and UI display
-        7. Waits for the next interval (set by the LLM in the thresholds)
+    NORMAL MODE (python controller.py):
+      Continuous loop:
+        1. Fetch active plant + LLM thresholds from Flask on Mac
+        2. Read real sensor via ADS1115
+        3. Normalize the 16-bit ADC value to 0-1023
+        4. Classify moisture level against thresholds
+        5. Set NeoPixel strip color
+        6. POST reading to Flask for storage and UI display
+        7. Wait for next interval
     """
     print("\n" + "=" * 60)
     print("  ForgetMeNot — Pi Controller (Hardware Edition)")
     print("  ADS1115 ADC + Capacitive Sensor + NeoPixel Strip")
-    print("  Server:", SERVER_URL)
+    print(f"  Server: {SERVER_URL}")
     print("=" * 60)
 
     chan, pixels = init_hardware()
     poll_interval = DEFAULT_POLL_INTERVAL
 
-    # ------------------------------------------------------------------
-    # DEMO MODE — cycles through all 4 LED colors to test wiring
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # DEMO MODE
+    # -------------------------------------------------------------------------
     if demo_mode:
         print("\n  [DEMO] Cycling through all LED colors...\n")
 
-        # Still needs an active plant to log readings to the server
         try:
             resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
             plant_id = resp.json()["plant"]["id"]
         except Exception as e:
             print(f"  Could not reach server: {e}")
-            print("  Make sure app.py is running and a plant is activated.")
+            print("  Make sure app.py is running on your Mac and a plant is activated.")
             clear_leds(pixels)
             return
 
-        # Fake readings that hit each status zone
         demo_readings = [
-            (120, "overwatered"),   # Very wet
-            (420, "watered"),       # Healthy
-            (650, "almost_time"),   # Getting dry
-            (850, "needs_water"),   # Very dry
+            (120, "overwatered"),
+            (420, "watered"),
+            (650, "almost_time"),
+            (850, "needs_water"),
         ]
 
         for normalized, status in demo_readings:
             ts = datetime.now().strftime("%H:%M:%S")
             print(f"  [{ts}] Fake ADC: {normalized:>4}  →  {status.upper()}")
-            set_led(pixels, status)  # Light up the strip
-
-            # Log this fake reading to the server so you can see it in the web UI
+            set_led(pixels, status)
             try:
                 requests.post(f"{SERVER_URL}/api/log", json={
                     "plant_id": plant_id,
@@ -314,16 +275,15 @@ def run_controller(demo_mode: bool = False):
                 print("  Logged to server.")
             except Exception as e:
                 print(f"  Log failed: {e}")
-
-            time.sleep(2)  # Hold each color for 2 seconds
+            time.sleep(2)
 
         clear_leds(pixels)
         print("\n  [DEMO] Done. All LED colors confirmed.\n")
         return
 
-    # ------------------------------------------------------------------
-    # NORMAL MODE — real sensor readings, continuous loop
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # NORMAL MODE
+    # -------------------------------------------------------------------------
     consecutive_errors = 0
     loop_count = 0
 
@@ -334,72 +294,65 @@ def run_controller(demo_mode: bool = False):
             print(f"\n{'─' * 60}")
             print(f"  [{ts}] Loop #{loop_count}")
 
-            # STEP 1: Fetch the active plant profile + LLM thresholds from Flask
+            # STEP 1: Fetch active plant + thresholds from Flask on Mac
             try:
                 resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
 
                 if resp.status_code == 404:
-                    # No plant activated yet — show purple and wait
-                    print("  No active plant set in the web UI. Waiting...")
+                    print("  No active plant set. Go to the web UI and activate one.")
                     set_led(pixels, "unknown")
                     time.sleep(poll_interval)
                     continue
 
                 plant_data = resp.json()
-                plant  = plant_data["plant"]
-                thresh = plant_data["thresholds"]
+                plant    = plant_data["plant"]
+                thresh   = plant_data["thresholds"]
                 plant_id = plant["id"]
 
-                # The LLM sets how often to poll (in minutes). We convert to seconds.
-                # The max(5, ...) ensures we never poll faster than every 5 seconds during testing.
                 stored_interval = thresh.get("check_interval_minutes", 1)
-                poll_interval = max(5, stored_interval * 60)
+                poll_interval   = max(5, stored_interval * 60)
 
-                # Print setup info on the first loop only
                 if loop_count == 1:
                     print(f"  Plant    : {plant['name']} ({plant['plant_type']})")
-                    print(f"  Interval : {stored_interval} min  (running at {poll_interval}s for demo)")
+                    print(f"  Interval : {stored_interval} min  ({poll_interval}s for demo)")
                     print(f"  Thresholds:")
-                    print(f"    Overwatered if below : {thresh['overwatered_max']}")
-                    print(f"    Healthy range        : {thresh['healthy_min']} – {thresh['healthy_max']}")
-                    print(f"    Water soon above     : {thresh['almost_time_min']}")
-                    print(f"    Water now above      : {thresh['needs_water_min']}")
+                    print(f"    Overwatered below : {thresh['overwatered_max']}")
+                    print(f"    Healthy range     : {thresh['healthy_min']} – {thresh['healthy_max']}")
+                    print(f"    Water soon above  : {thresh['almost_time_min']}")
+                    print(f"    Water now above   : {thresh['needs_water_min']}")
 
-                consecutive_errors = 0  # Reset error counter on success
+                consecutive_errors = 0
 
             except requests.exceptions.ConnectionError:
                 consecutive_errors += 1
-                print(f"  Cannot reach Flask server ({consecutive_errors} failures in a row).")
+                print(f"  Cannot reach Flask server ({consecutive_errors} failures).")
                 set_led(pixels, "unknown")
                 if consecutive_errors >= 3:
-                    print("  Is app.py running? Retrying in 15s...")
+                    print("  Is app.py running on your Mac? Retrying in 15s...")
                     time.sleep(15)
                 continue
 
             except Exception as e:
-                print(f"  Unexpected error fetching plant data: {e}")
+                print(f"  Unexpected error: {e}")
                 time.sleep(poll_interval)
                 continue
 
-            # STEP 2 & 3: Read sensor and normalize
-            # chan.value triggers the ADS1115 to sample the analog voltage and return digital int
+            # STEP 2 + 3: Read sensor and normalize ADC value
             normalized, raw_ads = read_sensor_normalized(chan)
             print(f"  Sensor   : ADS1115 raw = {raw_ads}  →  normalized = {normalized} / 1023")
 
-            # STEP 4: Classify moisture level against LLM thresholds
+            # STEP 4: Classify against LLM thresholds
             status = classify_moisture(normalized, thresh)
             print(f"  Status   : {status.upper()}")
 
-            # STEP 5: Update NeoPixel strip color
+            # STEP 5: Drive NeoPixel strip
             set_led(pixels, status)
 
-            # STEP 6: POST reading to Flask server for storage and UI display
-            # We send the NORMALIZED value (not raw ADS1115) so the UI and graphs
-            # stay on a consistent 0–1023 scale regardless of ADC hardware.
+            # STEP 6: POST to Flask — send normalized value so UI stays on 0-1023 scale
             try:
                 log_resp = requests.post(f"{SERVER_URL}/api/log", json={
                     "plant_id": plant_id,
-                    "raw_value": normalized,  # normalized to 0–1023
+                    "raw_value": normalized,
                     "status": status
                 }, timeout=5)
 
@@ -415,8 +368,7 @@ def run_controller(demo_mode: bool = False):
             time.sleep(poll_interval)
 
     except KeyboardInterrupt:
-        # Clean shutdown on Ctrl+C — always turn off LEDs
-        print("\n\n  Ctrl+C received — turning off LEDs and exiting.")
+        print("\n\n  Shutting down — clearing LEDs.")
         clear_leds(pixels)
 
 
@@ -425,11 +377,11 @@ def run_controller(demo_mode: bool = False):
 # =============================================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ForgetMeNot Pi Controller (Hardware)")
+    parser = argparse.ArgumentParser(description="ForgetMeNot Pi Controller")
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="Cycle through all 4 LED colors once using fake values, then exit"
+        help="Cycle through all 4 LED colors with fake values, then exit"
     )
     args = parser.parse_args()
     run_controller(demo_mode=args.demo)
