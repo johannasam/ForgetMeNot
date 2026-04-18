@@ -24,7 +24,7 @@ import board
 import busio
 import neopixel
 import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
+from adafruit_ads1x15.ads1115 import ADS1115
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -94,7 +94,7 @@ def init_hardware():
     """
     i2c = busio.I2C(board.SCL, board.SDA)
     ads = ADS.ADS1115(i2c)
-    chan = AnalogIn(ads, ADS.P0)
+    chan = AnalogIn(ads, 0)
 
     pixels = neopixel.NeoPixel(
         NEOPIXEL_PIN,
