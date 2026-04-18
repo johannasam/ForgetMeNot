@@ -25,6 +25,7 @@ import busio
 import neopixel
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.ads1115 import ADS1115
+from adafruit_ads1x15.analog_in import AnalogIn
 
 from dotenv import load_dotenv
 load_dotenv()
