@@ -311,7 +311,7 @@ def run_controller(demo_mode: bool = False):
                 plant_id = plant["id"]
 
                 stored_interval = thresh.get("check_interval_minutes", 1)
-                poll_interval   = max(5, stored_interval * 60)
+                poll_interval = 10
 
                 if loop_count == 1:
                     print(f"  Plant    : {plant['name']} ({plant['plant_type']})")
