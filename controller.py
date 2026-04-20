@@ -41,7 +41,7 @@ from datetime import datetime
 
 # Your Mac's local IP address. Find it by running: ipconfig getifaddr en0
 # Both Mac and Pi must be on the same WiFi network.
-SERVER_URL = "http://172.28.92.158:5000"  # e.g. "http://192.168.1.42:5000"
+SERVER_URL = "http:/172.28.116.152:5000"  # e.g. "http://192.168.1.42:5000"
 
 DEFAULT_POLL_INTERVAL = 10  # seconds between readings (fallback)
 
