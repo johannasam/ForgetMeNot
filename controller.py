@@ -65,8 +65,8 @@ BRIGHTNESS   = 0.3        # 0.0 to 1.0. At 0.3, 60 LEDs draw ~150mA — safe for
 #
 # Run calibrate.py first, then replace these with your actual readings:
 
-WET_RAW = 10000   # Raw ADS1115 value when sensor is in water (fully wet)
-DRY_RAW = 27000   # Raw ADS1115 value when sensor is in open air (completely dry)
+WET_RAW = 8560
+DRY_RAW = 17720
 
 
 # =============================================================================

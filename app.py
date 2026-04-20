@@ -301,12 +301,14 @@ def get_current_status():
     ).fetchone()
     conn.close()
 
-    return jsonify({
+    data_out = jsonify({
         "plant":      dict(plant),
         "latest":     dict(log) if log else None,
         "history":    [dict(r) for r in history],
         "thresholds": dict(thresholds) if thresholds else None
     })
+
+    return data_out
 
 @app.route("/api/history/<int:plant_id>", methods=["GET"])
 def get_history(plant_id):
