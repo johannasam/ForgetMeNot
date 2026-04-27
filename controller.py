@@ -1,267 +1,388 @@
 """
-ForgetMeNot - Pi Controller Service
-====================================
-Simulates the Raspberry Pi monitoring loop.
-- Fetches active plant + thresholds from the Flask web server via REST API
-- Generates mock ADC sensor readings (0–1023) with realistic drift
-- Classifies plant moisture status
-- "Controls" LED (prints color + logs)
-- POSTs readings back to the web server for storage and UI display
+ForgetMeNot - Pi Controller Service (Hardware Edition)
+=======================================================
+SIGNAL FLOW:
+  Capacitive Soil Sensor (analog voltage)
+    → ADS1115 ADC (converts analog to 16-bit digital over I2C)
+      → Raspberry Pi (reads digital value, classifies, drives LEDs)
+        → Flask Server on Mac (logs reading, updates web UI)
 
-Run this in a SEPARATE terminal from app.py:
-    python controller.py
+Run this on the Pi in a terminal:
+  python controller.py
 
-Communication Protocol: REST API (HTTP) — satisfies the midterm's 
-"two device/process communication" requirement.
+For a quick LED + server test before using the real sensor:
+  python controller.py --demo
+
+BEFORE RUNNING:
+  1. Run calibrate.py and update WET_RAW and DRY_RAW below
+  2. Find your Mac's IP with: ipconfig getifaddr en0
+     then update SERVER_URL below
 """
 
 import time
+import board
+import busio
+import neopixel
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.ads1115 import ADS1115
+from adafruit_ads1x15.analog_in import AnalogIn
+
 from dotenv import load_dotenv
 load_dotenv()
-import random
+
 import requests
 import argparse
 from datetime import datetime
 
-# ─── Configuration ─────────────────────────────────────────────────────────────
-SERVER_URL = "http://127.0.0.1:5000"
-DEFAULT_POLL_INTERVAL = 10  # seconds between readings (overridden by thresholds)
 
-# ANSI color codes for terminal LED simulation
-LED_COLORS = {
-    "watered":    "\033[92m",   # Green
-    "almost_time": "\033[93m",  # Yellow
-    "needs_water": "\033[91m",  # Red
-    "overwatered": "\033[33m",  # Orange
-    "unknown":    "\033[95m",   # Purple
-    "reset":      "\033[0m",
+# =============================================================================
+# CONFIGURATION — update these before running
+# =============================================================================
+
+# Your Mac's local IP address. Find it by running: ipconfig getifaddr en0
+# Both Mac and Pi must be on the same WiFi network.
+SERVER_URL = "http://172.28.116.152:5000"  # e.g. "http://192.168.1.42:5000"
+
+DEFAULT_POLL_INTERVAL = 10  # seconds between readings (fallback)
+
+
+# =============================================================================
+# NEOPIXEL CONFIGURATION
+# =============================================================================
+
+NEOPIXEL_PIN = board.D18  # GPIO 18 — standard PWM pin for NeoPixels on Pi
+NUM_PIXELS   = 60         # Your strip has 60 LEDs
+BRIGHTNESS   = 0.3        # 0.0 to 1.0. At 0.3, 60 LEDs draw ~150mA — safe for Pi's 5V pin.
+                          # Only increase to 1.0 if using an external 5V power supply.
+
+
+# =============================================================================
+# SENSOR CALIBRATION — update after running calibrate.py
+# =============================================================================
+# The ADS1115 returns signed 16-bit integers.
+# Capacitive sensors output LOWER voltage when WET, HIGHER when DRY.
+# Lower raw value = wetter, higher raw value = drier.
+#
+# Run calibrate.py first, then replace these with your actual readings:
+
+WET_RAW = 8560
+DRY_RAW = 17720
+
+
+# =============================================================================
+# HARDWARE INITIALIZATION
+# =============================================================================
+
+def init_hardware():
+    """
+    Initialize I2C bus, ADS1115 ADC, and NeoPixel strip.
+
+    WIRING — ADS1115 to Raspberry Pi:
+      ADS1115 VDD  →  Pi 3.3V   (Pin 1)
+      ADS1115 GND  →  Pi GND    (Pin 6)
+      ADS1115 SDA  →  Pi GPIO2  (Pin 3)
+      ADS1115 SCL  →  Pi GPIO3  (Pin 5)
+
+    WIRING — Moisture Sensor to ADS1115:
+      Sensor VCC   →  ADS1115 VDD
+      Sensor GND   →  ADS1115 GND
+      Sensor AOUT  →  ADS1115 A0   ← the analog signal wire
+
+    WIRING — NeoPixel Strip to Pi:
+      Strip 5V     →  Pi 5V     (Pin 2)
+      Strip GND    →  Pi GND    (Pin 9)
+      Strip DIN    →  Pi GPIO18 (Pin 12)
+    """
+    i2c = busio.I2C(board.SCL, board.SDA)
+    ads = ADS.ADS1115(i2c)
+    chan = AnalogIn(ads, 0)
+
+    pixels = neopixel.NeoPixel(
+        NEOPIXEL_PIN,
+        NUM_PIXELS,
+        brightness=BRIGHTNESS,
+        auto_write=False,
+        pixel_order=neopixel.GRB
+    )
+
+    pixels.fill((0, 0, 0))
+    pixels.show()
+
+    return chan, pixels
+
+
+# =============================================================================
+# ANALOG TO DIGITAL CONVERSION + NORMALIZATION
+# =============================================================================
+
+def read_sensor_normalized(chan) -> tuple[int, int]:
+    """
+    Reads the ADS1115 and normalizes the result to 0-1023.
+
+    WHAT'S HAPPENING:
+      1. The capacitive sensor detects moisture as a change in capacitance
+      2. That capacitance shifts the sensor's output VOLTAGE (analog signal)
+      3. The ADS1115 converts that voltage to a 16-bit INTEGER (digital) —
+         this is the actual Analog-to-Digital Conversion step
+      4. chan.value reads that integer from the ADS1115 over I2C
+      5. We normalize from the ADS1115's range down to 0-1023 so the rest
+         of the app (thresholds, database, UI charts) needs zero changes
+
+    NORMALIZATION MATH:
+      normalized = (raw - WET_RAW) / (DRY_RAW - WET_RAW) * 1023
+
+      Example with WET_RAW=10000, DRY_RAW=27000:
+        raw = 10000 (soaking wet) → normalized =    0
+        raw = 18500 (middle)      → normalized ~  511
+        raw = 27000 (bone dry)    → normalized = 1023
+
+    Returns:
+      normalized  — 0 to 1023 integer, used for classification and logging
+      raw         — original ADS1115 reading, printed for debugging
+    """
+    raw = chan.value  # Triggers ADS1115 to sample analog voltage → returns digital int
+
+    normalized = (raw - WET_RAW) / (DRY_RAW - WET_RAW) * 1023
+    normalized = int(max(0, min(1023, normalized)))
+
+    return normalized, raw
+
+
+# =============================================================================
+# LED CONTROL
+# =============================================================================
+
+STATUS_COLORS = {
+    "watered":     (0,   200,   0),   # Green  — healthy moisture
+    "almost_time": (255, 165,   0),   # Amber  — water soon
+    "needs_water": (200,   0,   0),   # Red    — water now
+    "overwatered": (0,     0, 200),   # Blue   — too wet, root rot risk
+    "unknown":     (128,   0, 128),   # Purple — error or no active plant
 }
 
-LED_DISPLAY = {
-    "watered":     "🟢 GREEN  — Soil moisture is healthy. No action needed.",
-    "almost_time": "🟡 YELLOW — Moisture dropping. Water soon.",
-    "needs_water": "🔴 RED    — Soil is dry! Plant needs water now.",
-    "overwatered": "🟠 ORANGE — Soil too wet. Risk of root rot.",
-    "unknown":     "🟣 PURPLE — Error: unable to classify moisture.",
+STATUS_LABELS = {
+    "watered":     "GREEN  — Healthy moisture.",
+    "almost_time": "AMBER  — Water soon.",
+    "needs_water": "RED    — Water now!",
+    "overwatered": "BLUE   — Too wet.",
+    "unknown":     "PURPLE — Error / no plant.",
 }
 
+def set_led(pixels, status: str):
+    """Set all 60 NeoPixels to the color for the given moisture status."""
+    color = STATUS_COLORS.get(status, STATUS_COLORS["unknown"])
+    pixels.fill(color)
+    pixels.show()
+    print(f"  LED: {STATUS_LABELS.get(status, STATUS_LABELS['unknown'])}")
 
-# ─── Sensor Simulation ─────────────────────────────────────────────────────────
 
-class MockSensor:
+def clear_leds(pixels):
+    """Turn off all LEDs. Called on shutdown."""
+    pixels.fill((0, 0, 0))
+    pixels.show()
+
+
+# =============================================================================
+# MOISTURE CLASSIFICATION
+# =============================================================================
+
+def classify_moisture(normalized: int, thresholds: dict) -> str:
     """
-    Simulates a capacitive soil moisture sensor with realistic drift.
-    
-    ADC range: 0–1023
-    - Low values (~100–300) = very wet
-    - Mid values (~400–650) = healthy range
-    - High values (~700–900) = dry
-    - Very high (>900) = extremely dry
+    Maps a normalized 0-1023 reading to a status string using the
+    LLM-generated thresholds stored in the Flask server's database.
 
-    Sensor drifts upward over time (soil drying) with occasional noise.
-    Call water() to reset moisture level.
+    Scale (lower = wetter, higher = drier):
+    0 --[overwatered_max]--[healthy_max]--[almost_time_min]-- 1023
+       ^                                                     ^
+      WET                                                   DRY
     """
+    ow_max = thresholds["overwatered_max"]
+    h_max  = thresholds["healthy_max"]
+    at_min = thresholds["almost_time_min"]
 
-    def __init__(self, initial_value: int = None):
-        # Start in a random but reasonable zone
-        self.value = initial_value if initial_value else random.randint(350, 550)
-        self.drift_rate = random.uniform(3, 8)   # ADC units per reading (drying)
-        self.noise_range = 15                      # ±15 ADC units of noise
-
-    def read(self) -> int:
-        """Return a noisy sensor reading and apply drying drift."""
-        noise = random.uniform(-self.noise_range, self.noise_range)
-        self.value += self.drift_rate + noise
-        self.value = max(0, min(1023, self.value))
-        return int(self.value)
-
-    def water(self):
-        """Simulate watering — resets moisture to wet range."""
-        self.value = random.randint(80, 250)
-        print(f"\n  💧 [SIMULATED WATERING] Sensor reset to {int(self.value)}\n")
-
-
-# ─── Classification Logic ──────────────────────────────────────────────────────
-
-def classify_moisture(raw: int, thresholds: dict) -> str:
-    """
-    Classify a raw ADC reading against the plant's stored thresholds.
-    
-    ADC: lower = wetter, higher = drier
-    
-    Zones (example for a typical houseplant):
-        0   ──── overwatered_max ──── healthy_min ──── healthy_max ──── almost_time_min ──── needs_water_min ──── 1023
-        [overwatered]               [  healthy  ]                      [almost time]         [needs water]
-    """
-    ow_max  = thresholds["overwatered_max"]
-    h_min   = thresholds["healthy_min"]
-    h_max   = thresholds["healthy_max"]
-    at_min  = thresholds["almost_time_min"]
-
-    if raw < ow_max:
+    if normalized < ow_max:
         return "overwatered"
-    elif raw <= h_max:
+    elif normalized <= h_max:
         return "watered"
-    elif raw <= at_min:
+    elif normalized <= at_min:
         return "almost_time"
     else:
         return "needs_water"
 
 
-def set_led(status: str):
-    """Print a colored LED status to the terminal (simulates GPIO output)."""
-    color = LED_COLORS.get(status, LED_COLORS["unknown"])
-    reset = LED_COLORS["reset"]
-    message = LED_DISPLAY.get(status, LED_DISPLAY["unknown"])
-    print(f"  LED: {color}{message}{reset}")
+# =============================================================================
+# MAIN CONTROLLER LOOP
+# =============================================================================
 
-
-# ─── Main Controller Loop ──────────────────────────────────────────────────────
-
-def run_controller(auto_water_threshold: int = 850, demo_mode: bool = False):
+def run_controller(demo_mode: bool = False):
     """
-    Main monitoring loop. Mirrors the pseudocode from the system architecture doc.
-    
-    auto_water_threshold: if raw ADC exceeds this, auto-simulate a watering event
-    demo_mode: if True, cycles through all statuses quickly for demonstration
-    """
-    print("\n" + "═" * 60)
-    print("  🌿 ForgetMeNot — Pi Controller Service")
-    print("  Communicating with Flask server at", SERVER_URL)
-    print("═" * 60)
+    Main entry point.
 
-    sensor = MockSensor()
+    DEMO MODE (python controller.py --demo):
+      Sends 4 fake readings to test LED colors and server connectivity.
+      Does not use the real sensor. Good for verifying wiring before planting.
+
+    NORMAL MODE (python controller.py):
+      Continuous loop:
+        1. Fetch active plant + LLM thresholds from Flask on Mac
+        2. Read real sensor via ADS1115
+        3. Normalize the 16-bit ADC value to 0-1023
+        4. Classify moisture level against thresholds
+        5. Set NeoPixel strip color
+        6. POST reading to Flask for storage and UI display
+        7. Wait for next interval
+    """
+    print("\n" + "=" * 60)
+    print("  ForgetMeNot — Pi Controller (Hardware Edition)")
+    print("  ADS1115 ADC + Capacitive Sensor + NeoPixel Strip")
+    print(f"  Server: {SERVER_URL}")
+    print("=" * 60)
+
+    chan, pixels = init_hardware()
     poll_interval = DEFAULT_POLL_INTERVAL
 
-    # ── Demo mode: cycle through all statuses ──────────────────────────────────
+    # -------------------------------------------------------------------------
+    # DEMO MODE
+    # -------------------------------------------------------------------------
     if demo_mode:
-        print("\n  [DEMO MODE] Cycling through all statuses...\n")
-        fake_readings = [
+        print("\n  [DEMO] Cycling through all LED colors...\n")
+
+        try:
+            resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
+            plant_id = resp.json()["plant"]["id"]
+        except Exception as e:
+            print(f"  Could not reach server: {e}")
+            print("  Make sure app.py is running on your Mac and a plant is activated.")
+            clear_leds(pixels)
+            return
+
+        demo_readings = [
             (120, "overwatered"),
             (420, "watered"),
             (650, "almost_time"),
             (850, "needs_water"),
         ]
-        try:
-            resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
-            plant_data = resp.json()
-            plant_id = plant_data["plant"]["id"]
-        except Exception as e:
-            print(f"  ⚠ Could not reach server: {e}")
-            print("  Make sure app.py is running and a plant is activated.\n")
-            return
 
-        for raw, status in fake_readings:
+        for normalized, status in demo_readings:
             ts = datetime.now().strftime("%H:%M:%S")
-            print(f"\n  [{ts}] Raw ADC: {raw:>4}  →  Status: {status.upper()}")
-            set_led(status)
+            print(f"  [{ts}] Fake ADC: {normalized:>4}  →  {status.upper()}")
+            set_led(pixels, status)
             try:
                 requests.post(f"{SERVER_URL}/api/log", json={
                     "plant_id": plant_id,
-                    "raw_value": raw,
+                    "raw_value": normalized,
                     "status": status
                 }, timeout=5)
-                print("  ✓ Reading logged to server.")
+                print("  Logged to server.")
             except Exception as e:
-                print(f"  ✗ Log failed: {e}")
+                print(f"  Log failed: {e}")
             time.sleep(2)
-        print("\n  [DEMO MODE] Complete.\n")
+
+        clear_leds(pixels)
+        print("\n  [DEMO] Done. All LED colors confirmed.\n")
         return
 
-    # ── Normal polling loop ────────────────────────────────────────────────────
+    # -------------------------------------------------------------------------
+    # NORMAL MODE
+    # -------------------------------------------------------------------------
     consecutive_errors = 0
     loop_count = 0
 
-    while True:
-        loop_count += 1
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        while True:
+            loop_count += 1
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\n{'─' * 60}")
+            print(f"  [{ts}] Loop #{loop_count}")
 
-        print(f"\n{'─' * 60}")
-        print(f"  [{ts}]  Loop #{loop_count}")
+            # STEP 1: Fetch active plant + thresholds from Flask on Mac
+            try:
+                resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
 
-        # 1. Fetch active plant + thresholds from web server
-        try:
-            resp = requests.get(f"{SERVER_URL}/api/active-plant", timeout=5)
-            if resp.status_code == 404:
-                print("  ⚠ No active plant set. Waiting...")
+                if resp.status_code == 404:
+                    print("  No active plant set. Go to the web UI and activate one.")
+                    set_led(pixels, "unknown")
+                    time.sleep(poll_interval)
+                    continue
+
+                plant_data = resp.json()
+                plant    = plant_data["plant"]
+                thresh   = plant_data["thresholds"]
+                plant_id = plant["id"]
+
+                stored_interval = thresh.get("check_interval_minutes", 1)
+                poll_interval = 10
+
+                if loop_count == 1:
+                    print(f"  Plant    : {plant['name']} ({plant['plant_type']})")
+                    print(f"  Interval : {stored_interval} min  ({poll_interval}s for demo)")
+                    print(f"  Thresholds:")
+                    print(f"    Overwatered below : {thresh['overwatered_max']}")
+                    print(f"    Healthy range     : {thresh['healthy_min']} – {thresh['healthy_max']}")
+                    print(f"    Water soon above  : {thresh['almost_time_min']}")
+                    print(f"    Water now above   : {thresh['needs_water_min']}")
+
+                consecutive_errors = 0
+
+            except requests.exceptions.ConnectionError:
+                consecutive_errors += 1
+                print(f"  Cannot reach Flask server ({consecutive_errors} failures).")
+                set_led(pixels, "unknown")
+                if consecutive_errors >= 3:
+                    print("  Is app.py running on your Mac? Retrying in 15s...")
+                    time.sleep(15)
+                continue
+
+            except Exception as e:
+                print(f"  Unexpected error: {e}")
                 time.sleep(poll_interval)
                 continue
 
-            plant_data = resp.json()
-            plant    = plant_data["plant"]
-            thresh   = plant_data["thresholds"]
-            plant_id = plant["id"]
+            # STEP 2 + 3: Read sensor and normalize ADC value
+            normalized, raw_ads = read_sensor_normalized(chan)
+            print(f"  Sensor   : ADS1115 raw = {raw_ads}  →  normalized = {normalized} / 1023")
 
-            # Update poll interval from stored thresholds (converted to seconds)
-            stored_interval = thresh.get("check_interval_minutes", 1)
-            poll_interval = max(5, stored_interval * 60)  # min 5 seconds for demo
-            if loop_count == 1:
-                print(f"  Plant:    {plant['name']} ({plant['plant_type']})")
-                print(f"  Interval: every {stored_interval} min (running at {poll_interval}s for demo)")
-                print(f"  Thresholds — OW: <{thresh['overwatered_max']} | "
-                      f"OK: {thresh['healthy_min']}–{thresh['healthy_max']} | "
-                      f"Soon: {thresh['almost_time_min']}+ | "
-                      f"Dry: {thresh['needs_water_min']}+")
+            # STEP 4: Classify against LLM thresholds
+            status = classify_moisture(normalized, thresh)
+            print(f"  Status   : {status.upper()}")
 
-            consecutive_errors = 0
+            # STEP 5: Drive NeoPixel strip
+            set_led(pixels, status)
 
-        except requests.exceptions.ConnectionError:
-            consecutive_errors += 1
-            print(f"  ✗ Cannot reach server ({consecutive_errors} consecutive failures).")
-            if consecutive_errors >= 3:
-                print("  Make sure app.py is running. Retrying in 15s...")
-            time.sleep(15)
-            continue
+            # STEP 6: POST to Flask — send normalized value so UI stays on 0-1023 scale
+            try:
+                log_resp = requests.post(f"{SERVER_URL}/api/log", json={
+                    "plant_id": plant_id,
+                    "raw_value": normalized,
+                    "status": status
+                }, timeout=5)
 
-        except Exception as e:
-            print(f"  ✗ Unexpected error fetching plant data: {e}")
+                if log_resp.status_code == 200:
+                    print("  Logged to server.")
+                else:
+                    print(f"  Server returned HTTP {log_resp.status_code}")
+
+            except Exception as e:
+                print(f"  Could not log reading: {e}")
+
+            # STEP 7: Wait before next reading
             time.sleep(poll_interval)
-            continue
 
-        # 2. Read sensor
-        raw = sensor.read()
-        print(f"  Sensor:   Raw ADC = {raw}")
-
-        # 3. Classify
-        status = classify_moisture(raw, thresh)
-        print(f"  Status:   {status.upper()}")
-
-        # 4. Set LED
-        set_led(status)
-
-        # 5. Auto-water simulation (resets sensor when very dry)
-        if raw > auto_water_threshold:
-            sensor.water()
-
-        # 6. Log reading to web server
-        try:
-            log_resp = requests.post(f"{SERVER_URL}/api/log", json={
-                "plant_id": plant_id,
-                "raw_value": raw,
-                "status": status
-            }, timeout=5)
-            if log_resp.status_code == 200:
-                print("  ✓ Reading logged to server.")
-            else:
-                print(f"  ✗ Log failed: {log_resp.status_code}")
-        except Exception as e:
-            print(f"  ✗ Could not log reading: {e}")
-
-        time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        print("\n\n  Shutting down — clearing LEDs.")
+        clear_leds(pixels)
 
 
-# ─── Entry Point ───────────────────────────────────────────────────────────────
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ForgetMeNot Pi Controller Service")
+    parser = argparse.ArgumentParser(description="ForgetMeNot Pi Controller")
     parser.add_argument(
-        "--demo", action="store_true",
-        help="Run in demo mode: cycles through all statuses once and exits"
-    )
-    parser.add_argument(
-        "--auto-water", type=int, default=850,
-        help="ADC threshold above which the sensor auto-resets (simulates watering). Default: 850"
+        "--demo",
+        action="store_true",
+        help="Cycle through all 4 LED colors with fake values, then exit"
     )
     args = parser.parse_args()
-
-    run_controller(auto_water_threshold=args.auto_water, demo_mode=args.demo)
+    run_controller(demo_mode=args.demo)

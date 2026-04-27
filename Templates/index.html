@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
-  /* ── Variables ── */
   :root {
     --bg:        #e0f2e9;
     --bg2:       #f8fdfb;
@@ -38,7 +37,6 @@
     overflow-x: hidden;
   }
 
-  /* ── Noise texture overlay ── */
   body::before {
     content: '';
     position: fixed;
@@ -49,7 +47,6 @@
     opacity: 0.15;
   }
 
-  /* ── Layout ── */
   .shell {
     position: relative;
     z-index: 1;
@@ -58,7 +55,6 @@
     padding: 32px 24px;
   }
 
-  /* ── Header ── */
   header {
     display: flex;
     align-items: flex-end;
@@ -67,16 +63,8 @@
     padding-bottom: 24px;
     border-bottom: 1px solid var(--border);
   }
-  .logo-mark {
-    display: flex;
-    align-items: flex-end;
-    gap: 14px;
-  }
-  .logo-icon {
-    font-size: 40px;
-    line-height: 1;
-    filter: drop-shadow(0 0 16px #5eff8a88);
-  }
+  .logo-mark { display: flex; align-items: flex-end; gap: 14px; }
+  .logo-icon { font-size: 40px; line-height: 1; filter: drop-shadow(0 0 16px #5eff8a88); }
   .logo-text h1 {
     font-family: 'DM Serif Display', serif;
     font-size: 28px;
@@ -90,9 +78,6 @@
     letter-spacing: 2px;
     text-transform: uppercase;
     margin-top: 2px;
-  }
-  .header-status {
-    text-align: right;
   }
   .status-badge {
     display: inline-flex;
@@ -118,18 +103,14 @@
     50%       { opacity: 0.4; transform: scale(0.8); }
   }
 
-  /* ── Grid ── */
   .main-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 24px;
     align-items: start;
   }
-  @media (max-width: 720px) {
-    .main-grid { grid-template-columns: 1fr; }
-  }
+  @media (max-width: 720px) { .main-grid { grid-template-columns: 1fr; } }
 
-  /* ── Cards ── */
   .card {
     background: var(--bg2);
     border: 1px solid var(--border);
@@ -145,23 +126,14 @@
     font-weight: 500;
   }
 
-  /* ── Live Status Panel ── */
-  .status-panel {
-    grid-column: 1 / -1;
-  }
-  .status-inner {
-    display: flex;
-    gap: 24px;
-    align-items: center;
-  }
+  .status-panel { grid-column: 1 / -1; }
+  .status-inner { display: flex; gap: 24px; align-items: center; }
   .led-orb {
-    width: 80px;
-    height: 80px;
+    width: 80px; height: 80px;
     border-radius: 50%;
     flex-shrink: 0;
     transition: background 0.6s ease, box-shadow 0.6s ease;
     background: #222;
-    box-shadow: none;
   }
   .led-orb.green  { background: #5eff8a; box-shadow: 0 0 40px #5eff8a88, 0 0 80px #5eff8a33; }
   .led-orb.yellow { background: #ffc84a; box-shadow: 0 0 40px #ffc84a88, 0 0 80px #ffc84a33; }
@@ -190,37 +162,14 @@
   .status-label.off    { color: var(--muted); }
   .status-sub { color: var(--text2); font-size: 13px; }
 
-  .status-meta {
-    display: flex;
-    gap: 32px;
-    margin-top: 16px;
-  }
+  .status-meta { display: flex; gap: 32px; margin-top: 16px; }
   .meta-item { display: flex; flex-direction: column; gap: 2px; }
   .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); }
   .meta-value { font-family: 'DM Mono', monospace; font-size: 16px; color: var(--text); }
 
-  /* ── Moisture Bar ── */
-  .moisture-bar-wrap {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
-  }
+  .moisture-bar-wrap { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
   .bar-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase; }
-  .bar-track {
-    height: 8px;
-    background: var(--bg3);
-    border-radius: 4px;
-    overflow: visible;
-    position: relative;
-  }
-  /* gradient: left=wet (green), right=dry (red) — inverted for ADC */
-  .bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    background: linear-gradient(90deg, #ff5c5c, #ffc84a, #5eff8a, #ffc84a, #ff8c42);
-    background-size: 400% 100%;
-    transition: background-position 0.6s ease;
-  }
+  .bar-track { height: 8px; background: var(--bg3); border-radius: 4px; overflow: visible; position: relative; }
   .bar-thumb {
     position: absolute;
     top: 50%;
@@ -233,11 +182,9 @@
     pointer-events: none;
   }
 
-  /* ── Mini Chart ── */
   .chart-area { margin-top: 16px; }
   canvas#histChart { width: 100% !important; height: 120px !important; }
 
-  /* ── Form ── */
   .form-grid { display: flex; flex-direction: column; gap: 14px; }
   label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); display: block; margin-bottom: 5px; }
   input, textarea, select {
@@ -252,8 +199,7 @@
     outline: none;
     transition: border-color 0.2s;
   }
-  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
-  textarea { resize: vertical; min-height: 68px; }
+  input:focus, textarea:focus { border-color: var(--accent); }
 
   .btn {
     display: inline-flex;
@@ -270,45 +216,30 @@
     transition: all 0.2s;
     text-decoration: none;
   }
-  .btn-primary {
-    background: var(--accent);
-    color: #0a1a0d;
-    width: 100%;
-  }
+  .btn-primary { background: var(--accent); color: #0a1a0d; width: 100%; }
   .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
   .btn-primary:disabled { opacity: 0.15; cursor: not-allowed; transform: none; }
-  .btn-ghost {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text2);
-    font-size: 12px;
-    padding: 6px 14px;
-  }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text2); font-size: 12px; padding: 6px 14px; }
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
-  .btn-danger {
-    background: transparent;
-    border: 1px solid #3a1a1a;
-    color: #ff5c5c88;
-    font-size: 12px;
-    padding: 6px 12px;
-  }
+  .btn-danger { background: transparent; border: 1px solid #3a1a1a; color: #ff5c5c88; font-size: 12px; padding: 6px 12px; }
   .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
 
-  /* ── Plant List ── */
+  /* Plant List */
   .plant-list { display: flex; flex-direction: column; gap: 10px; }
   .plant-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .plant-item.active { border-color: var(--accent); }
+  .plant-row {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
     background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: border-color 0.2s;
   }
-  .plant-item:hover { border-color: var(--muted); }
-  .plant-item.active { border-color: var(--accent); background: #143d25; }
+  .plant-item.active .plant-row { background: #143d25; }
   .plant-item.active .plant-info strong { color: #e0f2e9; }
   .plant-item.active .plant-info span { color: #a0ccb4; }
   .plant-emoji { font-size: 22px; }
@@ -326,19 +257,97 @@
     letter-spacing: 1px;
     text-transform: uppercase;
   }
-  .empty-state {
-    text-align: center;
-    padding: 32px;
-    color: var(--muted);
-    font-size: 13px;
+
+  /* Care Guide Dropdown */
+  .care-dropdown {
+    display: none;
+    background: var(--bg3);
+    border-top: 1px solid var(--border);
+    padding: 16px;
   }
+  .care-dropdown.open { display: block; }
+  .care-dropdown-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+  .care-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .care-item {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .care-item-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+  .care-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .care-item-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent2);
+  }
+  .care-item-value {
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.5;
+    padding-left: 14px;
+  }
+  .care-thresh-section {
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: 4px;
+  }
+  .care-thresh-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .care-thresh-item {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .care-thresh-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .care-thresh-lbl {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .empty-state { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
   .empty-state .empty-icon { font-size: 36px; margin-bottom: 8px; }
 
-  /* ── Toast ── */
   #toast {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: 24px; right: 24px;
     background: #ffffff;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -355,7 +364,6 @@
   #toast.success { border-color: var(--accent); color: var(--accent); }
   #toast.error { border-color: var(--danger); color: var(--danger); }
 
-  /* ── Spinner ── */
   .spinner {
     display: inline-block;
     width: 14px; height: 14px;
@@ -366,20 +374,8 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Threshold display ── */
-  .threshold-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: 12px;
-  }
-  .thresh-item {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    text-align: center;
-  }
+  .threshold-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .thresh-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
   .thresh-val { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 500; }
   .thresh-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 3px; }
 
@@ -400,7 +396,6 @@
 <body>
 
 <div class="shell">
-  <!-- Header -->
   <header>
     <div class="logo-mark">
       <div class="logo-icon">🌱</div>
@@ -420,7 +415,7 @@
 
   <div class="main-grid">
 
-    <!-- ── Live Status Panel ── -->
+    <!-- Live Status Panel -->
     <div class="card status-panel">
       <div class="card-title">Live Status</div>
       <div class="status-inner">
@@ -450,7 +445,6 @@
         </div>
       </div>
 
-      <!-- Moisture Bar -->
       <div class="moisture-bar-wrap">
         <div class="bar-label">Moisture Level (ADC 0=wet → 1023=dry)</div>
         <div class="bar-track" id="barTrack">
@@ -458,7 +452,6 @@
         </div>
       </div>
 
-      <!-- History chart -->
       <div class="chart-area">
         <div class="bar-label" style="margin-top:16px;">Recent Readings</div>
         <canvas id="histChart"></canvas>
@@ -473,7 +466,7 @@
       {% endif %}
     </div>
 
-    <!-- ── Add Plant Form ── -->
+    <!-- Add Plant Form — Location and Care Notes removed -->
     <div class="card">
       <div class="card-title">Add New Plant</div>
       <form id="plantForm" class="form-grid" onsubmit="submitPlant(event)">
@@ -485,14 +478,6 @@
           <label>Plant Type</label>
           <input type="text" id="fType" placeholder="e.g. Pothos, Cactus, Tomato…" required />
         </div>
-        <div>
-          <label>Location (optional)</label>
-          <input type="text" id="fLocation" placeholder="e.g. Kitchen windowsill" />
-        </div>
-        <div>
-          <label>Care Notes (optional)</label>
-          <textarea id="fNotes" placeholder="e.g. Indirect light only, tends to dry out fast…"></textarea>
-        </div>
         <button type="submit" class="btn btn-primary" id="submitBtn">
           <span id="submitIcon">✦</span>
           <span id="submitText">Generate Thresholds with AI</span>
@@ -503,26 +488,66 @@
       </p>
     </div>
 
-    <!-- ── Plant List ── -->
+    <!-- Plant List with care guide dropdowns -->
     <div class="card">
       <div class="card-title">Your Plants</div>
       <div class="plant-list" id="plantList">
         {% if plants %}
           {% for plant in plants %}
           <div class="plant-item {% if plant.is_active %}active{% endif %}" id="pitem-{{ plant.id }}">
-            <div class="plant-emoji">🪴</div>
-            <div class="plant-info">
-              <strong>{{ plant.name }}</strong>
-              <span>{{ plant.plant_type }}{% if plant.location %} · {{ plant.location }}{% endif %}</span>
+            <div class="plant-row">
+              <div class="plant-emoji">🪴</div>
+              <div class="plant-info">
+                <strong>{{ plant.name }}</strong>
+                <span>{{ plant.plant_type }}</span>
+              </div>
+              <div class="plant-actions">
+                {% if plant.is_active %}
+                  <span class="active-tag">Active</span>
+                {% else %}
+                  <button class="btn btn-ghost" onclick="activatePlant({{ plant.id }}, event)">Monitor</button>
+                {% endif %}
+                <button class="btn btn-ghost" id="detail-btn-{{ plant.id }}" onclick="toggleCare({{ plant.id }}, event)">Detail ▾</button>
+                <button class="btn btn-danger" onclick="deletePlant({{ plant.id }}, event)">✕</button>
+              </div>
             </div>
-            <div class="plant-actions">
-              {% if plant.is_active %}
-                <span class="active-tag">Active</span>
-              {% else %}
-                <button class="btn btn-ghost" onclick="activatePlant({{ plant.id }}, event)">Monitor</button>
-              {% endif %}
-              <a href="/plant/{{ plant.id }}" class="btn btn-ghost">Detail</a>
-              <button class="btn btn-danger" onclick="deletePlant({{ plant.id }}, event)">✕</button>
+            <div class="care-dropdown" id="care-{{ plant.id }}">
+              <div class="care-dropdown-title">✦ AI Care Guide</div>
+              <div class="care-grid">
+                <div class="care-item">
+                  <div class="care-item-header"><div class="care-dot"></div><div class="care-item-title">Sunlight</div></div>
+                  <div class="care-item-value" id="care-sunlight-{{ plant.id }}">Loading...</div>
+                </div>
+                <div class="care-item">
+                  <div class="care-item-header"><div class="care-dot"></div><div class="care-item-title">Humidity</div></div>
+                  <div class="care-item-value" id="care-humidity-{{ plant.id }}">Loading...</div>
+                </div>
+                <div class="care-item">
+                  <div class="care-item-header"><div class="care-dot"></div><div class="care-item-title">Temperature</div></div>
+                  <div class="care-item-value" id="care-temperature-{{ plant.id }}">Loading...</div>
+                </div>
+                <div class="care-item">
+                  <div class="care-item-header"><div class="care-dot"></div><div class="care-item-title">Soil type</div></div>
+                  <div class="care-item-value" id="care-soil-{{ plant.id }}">Loading...</div>
+                </div>
+              </div>
+              <div class="care-thresh-section">
+                <div class="care-dropdown-title" style="margin-bottom:8px;">Moisture Thresholds</div>
+                <div class="care-thresh-grid">
+                  <div class="care-thresh-item">
+                    <div class="care-thresh-val" id="care-ow-{{ plant.id }}" style="color:var(--orange)">—</div>
+                    <div class="care-thresh-lbl">Overwater max</div>
+                  </div>
+                  <div class="care-thresh-item">
+                    <div class="care-thresh-val" id="care-range-{{ plant.id }}" style="color:var(--green)">—</div>
+                    <div class="care-thresh-lbl">Healthy range</div>
+                  </div>
+                  <div class="care-thresh-item">
+                    <div class="care-thresh-val" id="care-nw-{{ plant.id }}" style="color:var(--red)">—</div>
+                    <div class="care-thresh-lbl">Needs water</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           {% endfor %}
@@ -538,12 +563,10 @@
   </div>
 </div>
 
-<!-- Toast -->
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-// ── Toast ──────────────────────────────────────────────────────────────────
 function toast(msg, type='success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -551,13 +574,12 @@ function toast(msg, type='success') {
   setTimeout(() => t.className = '', 3000);
 }
 
-// ── LED + Status ───────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  watered:     { color: 'green',  label: 'Watered & Healthy',     sub: 'Soil moisture is in the ideal range.' },
-  almost_time: { color: 'yellow', label: 'Almost Time',           sub: 'Moisture is dropping. Water soon.' },
-  needs_water: { color: 'red',    label: 'Needs Water',           sub: 'Soil is dry — plant needs water now!' },
-  overwatered: { color: 'orange', label: 'Overwatered',           sub: 'Soil is too wet. Risk of root rot.' },
-  unknown:     { color: 'purple', label: 'Unknown',               sub: 'Unable to classify moisture.' },
+  watered:     { color: 'green',  label: 'Watered & Healthy',   sub: 'Soil moisture is in the ideal range.' },
+  almost_time: { color: 'yellow', label: 'Almost Time',         sub: 'Moisture is dropping. Water soon.' },
+  needs_water: { color: 'red',    label: 'Needs Water',         sub: 'Soil is dry — plant needs water now!' },
+  overwatered: { color: 'orange', label: 'Overwatered',         sub: 'Soil is too wet. Risk of root rot.' },
+  unknown:     { color: 'purple', label: 'Unknown',             sub: 'Unable to classify moisture.' },
 };
 
 function updateStatus(data) {
@@ -570,22 +592,20 @@ function updateStatus(data) {
 
   if (!latest) return;
 
-  const s = STATUS_MAP[latest.status] || STATUS_MAP.unknown;
+  const s     = STATUS_MAP[latest.status] || STATUS_MAP.unknown;
   const orb   = document.getElementById('ledOrb');
   const label = document.getElementById('statusLabel');
 
-  orb.className   = `led-orb ${s.color}`;
-  label.className = `status-label ${s.color}`;
+  orb.className     = `led-orb ${s.color}`;
+  label.className   = `status-label ${s.color}`;
   label.textContent = s.label;
-  document.getElementById('statusSub').textContent = s.sub;
-  document.getElementById('metaADC').textContent  = latest.raw_value;
-  document.getElementById('metaTime').textContent = latest.timestamp.split('T').join(' ').slice(0, -3);
+  document.getElementById('statusSub').textContent  = s.sub;
+  document.getElementById('metaADC').textContent    = latest.raw_value;
+  document.getElementById('metaTime').textContent   = latest.timestamp.split('T').join(' ').slice(0, -3);
 
-  // Bar thumb position: ADC 0 (wet) = left, 1023 (dry) = right
   const pct = (latest.raw_value / 1023) * 100;
   document.getElementById('barThumb').style.left = `${pct}%`;
 
-  // Thresholds
   if (thresh && document.getElementById('threshGrid')) {
     document.getElementById('threshGrid').innerHTML = `
       <div class="thresh-item"><div class="thresh-val" style="color:var(--orange)">${thresh.overwatered_max}</div><div class="thresh-lbl">Overwater Max</div></div>
@@ -598,14 +618,10 @@ function updateStatus(data) {
   updateChart(data.history);
 }
 
-// ── Chart ──────────────────────────────────────────────────────────────────
 let chart = null;
 const STATUS_COLORS = {
-  watered:     '#5eff8a',
-  almost_time: '#ffc84a',
-  needs_water: '#ff5c5c',
-  overwatered: '#ff8c42',
-  unknown:     '#b05eff',
+  watered: '#5eff8a', almost_time: '#ffc84a',
+  needs_water: '#ff5c5c', overwatered: '#ff8c42', unknown: '#b05eff',
 };
 
 function updateChart(history) {
@@ -638,12 +654,7 @@ function updateChart(history) {
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: '#6aaa88', font: { size: 10 } }, grid: { color: '#c8e8d8' } },
-          y: {
-            min: 0, max: 1023,
-            ticks: { color: '#6aaa88', font: { size: 10 } },
-            grid: { color: '#c8e8d8' },
-            reverse: false,
-          }
+          y: { min: 0, max: 1023, ticks: { color: '#6aaa88', font: { size: 10 } }, grid: { color: '#c8e8d8' } }
         }
       }
     });
@@ -655,7 +666,6 @@ function updateChart(history) {
   }
 }
 
-// ── Poll for live status ───────────────────────────────────────────────────
 function pollStatus() {
   fetch('/api/status')
     .then(r => r.ok ? r.json() : null)
@@ -668,7 +678,6 @@ pollStatus();
 setInterval(pollStatus, 5000);
 {% endif %}
 
-// ── Submit Plant Form ──────────────────────────────────────────────────────
 function submitPlant(e) {
   e.preventDefault();
   const btn  = document.getElementById('submitBtn');
@@ -682,8 +691,8 @@ function submitPlant(e) {
   const payload = {
     name:       document.getElementById('fName').value,
     plant_type: document.getElementById('fType').value,
-    location:   document.getElementById('fLocation').value,
-    notes:      document.getElementById('fNotes').value,
+    location:   '',
+    notes:      '',
   };
 
   fetch('/api/plants', {
@@ -698,9 +707,7 @@ function submitPlant(e) {
     document.getElementById('plantForm').reset();
     setTimeout(() => location.reload(), 1200);
   })
-  .catch(err => {
-    toast('Error: ' + err.message, 'error');
-  })
+  .catch(err => { toast('Error: ' + err.message, 'error'); })
   .finally(() => {
     btn.disabled = false;
     icon.textContent = '✦';
@@ -708,7 +715,6 @@ function submitPlant(e) {
   });
 }
 
-// ── Activate Plant ─────────────────────────────────────────────────────────
 function activatePlant(id, e) {
   e.stopPropagation();
   fetch(`/api/plants/${id}/activate`, { method: 'POST' })
@@ -716,13 +722,43 @@ function activatePlant(id, e) {
     .catch(() => toast('Failed to activate', 'error'));
 }
 
-// ── Delete Plant ───────────────────────────────────────────────────────────
 function deletePlant(id, e) {
   e.stopPropagation();
   if (!confirm('Remove this plant and all its data?')) return;
   fetch(`/api/plants/${id}`, { method: 'DELETE' })
     .then(() => { toast('Plant removed.'); setTimeout(() => location.reload(), 800); })
     .catch(() => toast('Failed to delete', 'error'));
+}
+
+function toggleCare(id, e) {
+  e.stopPropagation();
+  const panel = document.getElementById(`care-${id}`);
+  const btn   = document.getElementById(`detail-btn-${id}`);
+  const isOpen = panel.classList.contains('open');
+
+  // Close all dropdowns first
+  document.querySelectorAll('.care-dropdown').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('[id^="detail-btn-"]').forEach(b => b.textContent = 'Detail ▾');
+
+  if (!isOpen) {
+    panel.classList.add('open');
+    btn.textContent = 'Detail ▴';
+
+    // Fetch care data for this plant
+    fetch(`/api/plants/${id}/thresholds`)
+      .then(r => r.ok ? r.json() : null)
+      .then(t => {
+        if (!t) return;
+        document.getElementById(`care-sunlight-${id}`).textContent    = t.sunlight     || 'Not available — re-add plant to generate';
+        document.getElementById(`care-humidity-${id}`).textContent    = t.humidity     || 'Not available — re-add plant to generate';
+        document.getElementById(`care-temperature-${id}`).textContent = t.temperature  || 'Not available — re-add plant to generate';
+        document.getElementById(`care-soil-${id}`).textContent        = t.soil_type    || 'Not available — re-add plant to generate';
+        document.getElementById(`care-ow-${id}`).textContent          = t.overwatered_max || '—';
+        document.getElementById(`care-range-${id}`).textContent       = `${t.healthy_min}–${t.healthy_max}`;
+        document.getElementById(`care-nw-${id}`).textContent          = t.needs_water_min || '—';
+      })
+      .catch(() => {});
+  }
 }
 </script>
 </body>
